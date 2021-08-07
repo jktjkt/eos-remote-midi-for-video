@@ -56,9 +56,16 @@ class Camera:
     def apply_command(self, what, value):
         if what in ('exposurecompensation', 'aperture', 'whitebalance', 'shutterspeed',
                     'whitebalance', 'colortemperature', 'whitebalanceadjusta', 'whitebalanceadjustb',
-                    'manualfocusdrive'):
+                    'manualfocusdrive', 'movieservoaf'):
             cfg = self.cam.get_config()
-            w = cfg.get_child_by_name(what)
+            try:
+                w = cfg.get_child_by_name(what)
+            except gp.GPhoto2Error:
+                print(f'Unsupported by camera: {what}')
+                if what == 'movieservoaf':
+                    self.event_handler()
+                return
+
             if w.get_type() == gp.GP_WIDGET_RADIO or w.get_type() == gp.GP_WIDGET_MENU:
                 if value not in w.get_choices():
                     possibilities = ', '.join(w.get_choices())
@@ -182,7 +189,7 @@ class XTouchMini:
             if function_for_encoder(control) is None:
                 self.leds_special(control, 'off')
             elif function_for_encoder(control) == 'focus':
-                self.leds_special(control, 'blink-center')
+                self.leds_special(control, 'off')
             else:
                 # Switch LEDs to the "pan" mode. This is redundant because it's already set up via the X-Touch Mini edit app.
                 self.m_out.send(mido.Message('control_change', channel=0, control=control + 1, value=1))
@@ -288,6 +295,7 @@ class XTouchMini:
                             value = 'Near 2'
                         else:
                             value = 'Near 3'
+                    self.on_change('movieservoaf', 'Off')
                     self.on_change('manualfocusdrive', value)
                 else:
                     self.on_change(key, self.results[encoder][idx])
@@ -309,8 +317,8 @@ class XTouchMini:
                     idx = self.range_for(message.note).index(self.faders[message.note])
                     self.on_change(function, self.results[message.note][idx])
                 if function == 'focus':
-                    # FIXME: control Movie Servo AF
-                    pass
+                    self.on_change('movieservoaf', 'On')
+                    self.leds_special(message.note, 'all-on')
         else:
             print(f'!!! unhandled MIDI in: {message}')
 
@@ -330,6 +338,13 @@ class Handler:
         for key, encoder in ENCODER_TO_FUNCTION.items():
             if key == 'focus':
                 # magic
+                try:
+                    if cfg.get_child_by_name('movieservoaf').get_value() == 'On':
+                        self.midi.leds_special(encoder, 'all-on')
+                    else:
+                        self.midi.leds_special(encoder, 'blink-center')
+                except gp.GPhoto2Error:
+                    self.midi.leds_special(encoder, 'blink-center')
                 continue
 
             w = cfg.get_child_by_name(key)
