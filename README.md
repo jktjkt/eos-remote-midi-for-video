@@ -27,7 +27,7 @@ TODO: enable/disable AF. Needs some gphoto2 changes?
 ## Remote access
 
 This part is not implemented yet.
-Use Behringer X-Touch in the combined Xctrl + Mackie mode.
+Use Behringer X-Touch in the combined Xctrl + HUI mode.
 Connect a single-board computer to each (remote) camera via USB.
 Use the spare buttons for camera preview control via Atem Mini, then spin the jog wheel for focus fine tuning.
 This will probably require some proxy messaging server to work around Atem Mini connection limit.
