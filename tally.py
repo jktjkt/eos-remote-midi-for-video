@@ -1,3 +1,12 @@
+#!/usr/bin/env python3
+#
+# Remote control of Canon EOS cameras for live video streaming.
+# Includes tally LED control on an add-on board.
+#
+# Copyright (C) 2021 Jan Kundrát <jkt@jankundrat.com>
+#
+# SPDX-License-Identifier: GPL-2.0-or-later
+
 import asyncio
 from contextlib import AsyncExitStack
 import socket
@@ -118,7 +127,6 @@ class Camera(threading.Thread):
             status[name] = value
         if self.old_status != status:
             self.old_status = status
-            # print(', '.join(f'{k} = {v}' for k, v in status.items()))
             self.event_handler(**status)
 
     def apply_command(self, what, value):
@@ -166,6 +174,12 @@ async def push_to_camera(camera, messages):
                 camera.queue.put([prop, value])
 
 
+async def do_republish(camera, messages):
+    async for message in messages:
+        print(f'MQTT: asked to republish')
+        camera.queue.put(['DUMP', None])
+
+
 async def cancel_tasks(tasks):
     for task in tasks:
         if task.done():
@@ -188,6 +202,7 @@ async def main(led):
     topic_camera = f'camera/{my_hostname}/set/#'
     camera_current = f'camera/{my_hostname}/current'
     camera_allowed = f'camera/{my_hostname}/allowed'
+    topic_republish = 'camera/dump-all'
 
     def on_camera_change(**kwargs):
         print(f'camera -> MQTT: {kwargs}')
@@ -210,7 +225,6 @@ async def main(led):
             raise
 
     camera = Camera(event_handler=on_camera_change, on_death=on_camera_death, on_dump_allowed=on_camera_allowed)
-    camera.start()
 
     async def join_camera():
         res = await camera.future
@@ -218,14 +232,15 @@ async def main(led):
             await client.publish(topic_status, str(res))
             raise res
 
-    while camera.is_alive():
+    while True:
         # Endless network reconnects while the camera works. Should be restarted externally when the camera disconnects.
         try:
             async with AsyncExitStack() as stack:
                 tasks = set()
                 stack.push_async_callback(cancel_tasks, tasks)
 
-                client = am.Client(sys.argv[1], keepalive=3, client_id=f'cam-{my_hostname}')
+                will = am.Will(topic=topic_status, payload='offline')
+                client = am.Client(sys.argv[1], keepalive=3, client_id=f'cam-{my_hostname}', will=will)
                 await stack.enter_async_context(client)
 
                 tally_msgs = await stack.enter_async_context(client.filtered_messages(topic_tally))
@@ -237,11 +252,15 @@ async def main(led):
                 cam_msgs = await stack.enter_async_context(client.filtered_messages(topic_camera))
                 tasks.add(asyncio.create_task(push_to_camera(camera, cam_msgs), name='mqtt->camera'))
 
-                for topic in (topic_tally, topic_preview, topic_camera):
+                republish_msgs = await stack.enter_async_context(client.filtered_messages(topic_republish))
+                tasks.add(asyncio.create_task(do_republish(camera, republish_msgs), name='republish from camera'))
+
+                for topic in (topic_tally, topic_preview, topic_camera, topic_republish):
                     await client.subscribe(topic)
 
                 await client.publish(topic_status, 'online')
                 camera.queue.put(['DUMP', None])
+                camera.start()
 
                 tasks.add(asyncio.create_task(wait_for_camera_death(), name='catch camera exceptions'))
 
