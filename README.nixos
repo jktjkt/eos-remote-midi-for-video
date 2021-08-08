@@ -1,0 +1,7 @@
+nix-shell ./build.nix --command 'python fotak.py'
+
+For builds on the Raspebrry Pi, we require a "new enough" libgphoto2.
+Buildroot cannot run autoreconf *properly* at this time, so here's how to create a proper tarball of libgphoto2:
+```
+time nix-shell -p autoconf automake libtool intltool pkgconf libxml2 popt --command 'autoreconf -fi; ./configure; make dist'
+```
