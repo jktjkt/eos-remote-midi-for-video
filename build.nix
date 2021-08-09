@@ -2,14 +2,14 @@
 
 let
   libgphoto2 = pkgs.libgphoto2.overrideAttrs(attrs: {
-    version = "2021-08-07";
+    version = "2021-08-08";
     src = /home/jkt/work/prog/libgphoto2;
   });
   tmp_gphoto2 = pkgs.gphoto2.override {
     libgphoto2 = libgphoto2;
   };
   gphoto2 = tmp_gphoto2.overrideAttrs(attrs: {
-    version = "2021-04-20";
+    version = "2021-06-30";
     src = /home/jkt/work/prog/gphoto2;
   });
   my_python = pkgs.python38;
@@ -33,5 +33,6 @@ in pkgs.mkShell rec {
     my_python.pkgs.python-language-server
     my_python.pkgs.rope
     my_python.pkgs.asyncio-mqtt
+    my_python.pkgs.pyside2
   ];
 }
