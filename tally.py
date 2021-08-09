@@ -79,7 +79,7 @@ class Camera(threading.Thread):
         'whitebalance', 'colortemperature', 'whitebalanceadjusta', 'whitebalanceadjustb'
     )
 
-    def __init__(self, event_handler, on_death, on_dump_allowed):
+    def __init__(self, event_handler, on_death, on_dump_allowed, on_fully_up):
         threading.Thread.__init__(self)
         self.daemon = True
         self.event_handler = event_handler
@@ -88,6 +88,8 @@ class Camera(threading.Thread):
         self.queue = queue.Queue()
         self.on_death = on_death
         self.on_dump_allowed = on_dump_allowed
+        self.on_fully_up = on_fully_up
+        self._fully_up = False
 
     def run(self):
         try:
@@ -139,6 +141,9 @@ class Camera(threading.Thread):
         if self.old_status != status:
             self.old_status = status
             self.event_handler(**status)
+        if not self._fully_up:
+            self._fully_up = True
+            self.on_fully_up()
 
     def apply_command(self, what, value):
         if what == 'DUMP':
@@ -197,6 +202,7 @@ async def cancel_tasks(tasks):
 async def main(led):
     loop = asyncio.get_running_loop()
     camera_exception_f = loop.create_future()
+    camera_up_f = loop.create_future()
     client = None
     my_hostname = socket.gethostname()
     topic_tally = f'camera/{my_hostname}/tally'
@@ -227,7 +233,14 @@ async def main(led):
             await client.publish(f'{topic_status}', repr(e))
             raise
 
-    camera = Camera(event_handler=on_camera_change, on_death=on_camera_death, on_dump_allowed=on_camera_allowed)
+    def on_camera_up():
+        loop.call_soon_threadsafe(camera_up_f.set_result, True)
+
+    async def wait_for_camera_up():
+        await camera_up_f
+        await client.publish(f'{topic_status}', 'online')
+
+    camera = Camera(event_handler=on_camera_change, on_death=on_camera_death, on_dump_allowed=on_camera_allowed, on_fully_up=on_camera_up)
 
     async def join_camera():
         res = await camera.future
@@ -261,7 +274,8 @@ async def main(led):
                 for topic in (topic_tally, topic_preview, topic_camera, topic_republish):
                     await client.subscribe(topic)
 
-                await client.publish(topic_status, 'online')
+                await client.publish(topic_status, 'connecting...')
+                tasks.add(asyncio.create_task(wait_for_camera_up(), name='signal camera readiness'))
                 camera.queue.put(['DUMP', None])
                 camera.start()
 
