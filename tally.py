@@ -230,7 +230,7 @@ async def main(led):
         try:
             await camera_exception_f
         except Exception as e:
-            await client.publish(f'{topic_status}', repr(e))
+            await client.publish(f'{topic_status}', repr(e), retain=True)
             raise
 
     def on_camera_up():
@@ -238,14 +238,14 @@ async def main(led):
 
     async def wait_for_camera_up():
         await camera_up_f
-        await client.publish(f'{topic_status}', 'online')
+        await client.publish(f'{topic_status}', 'online', retain=True)
 
     camera = Camera(event_handler=on_camera_change, on_death=on_camera_death, on_dump_allowed=on_camera_allowed, on_fully_up=on_camera_up)
 
     async def join_camera():
         res = await camera.future
         if res is not None:
-            await client.publish(topic_status, str(res))
+            await client.publish(topic_status, str(res), retain=True)
             raise res
 
     while True:
@@ -255,7 +255,7 @@ async def main(led):
                 tasks = set()
                 stack.push_async_callback(cancel_tasks, tasks)
 
-                will = am.Will(topic=topic_status, payload='offline')
+                will = am.Will(topic=topic_status, payload='offline', retain=True)
                 client = am.Client(sys.argv[1], keepalive=3, client_id=f'cam-{my_hostname}', will=will)
                 await stack.enter_async_context(client)
 
@@ -274,7 +274,7 @@ async def main(led):
                 for topic in (topic_tally, topic_preview, topic_camera, topic_republish):
                     await client.subscribe(topic)
 
-                await client.publish(topic_status, 'connecting...')
+                await client.publish(topic_status, 'connecting...', retain=True)
                 tasks.add(asyncio.create_task(wait_for_camera_up(), name='signal camera readiness'))
                 camera.queue.put(['DUMP', None])
                 camera.start()
