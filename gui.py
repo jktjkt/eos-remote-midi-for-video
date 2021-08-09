@@ -110,6 +110,9 @@ class CameraManager(QObject):
                 # FIXME: blink something?
                 return
             new_value = self._allowed[what][idx + delta]
+            if new_value == 'Auto':
+                print(f'Refusing to set {what} = {new_value} via relative toggle')
+                return
             self._send_via_mqtt(what, new_value)
 
 
@@ -283,18 +286,25 @@ class MidiHandler:
     def __init__(self, target_camera):
         self.target_camera = target_camera
         self.midi_mode = self.MIDI_CONTROL_FANCY
+        self.broken_auto_iso = False
         self.xtouch = xtouch.XTouch('X-Touch X-TOUCH_INT',
                                     on_wheel=lambda diff: self.handle_midi_wheel(diff),
                                     on_button=lambda button, pressed: self.handle_midi_button(button, pressed))
         self.target_camera.camera_changed.connect(lambda: self.propagate_to_midi())
+        self.propagate_to_midi()
 
     def propagate_to_midi(self):
+        self.broken_auto_iso = self.target_camera.read_property('cameramodel') in (
+            'Canon EOS 6D',
+            'Canon EOS 5D Mark II',
+            'Canon EOS 5D Mark III',
+        )
         if self.midi_mode == self.MIDI_CONTROL_FANCY:
-            self.xtouch.control_led('drop', False)
-            self.xtouch.control_led('replace', False)
-            self.xtouch.control_led('click', False)
-            self.xtouch.control_led('solo', False)
-            if self.target_camera.read_property('autoexposuremode') == 'Manual':
+            if self.broken_auto_iso:
+                self.xtouch.control_led('marker', True)
+                self.xtouch.control_led('nudge', True)
+                self.xtouch.control_led('cycle', True)
+            elif self.target_camera.read_property('autoexposuremode') == 'Manual':
                 self.xtouch.control_led('marker', True)
                 self.xtouch.control_led('nudge', False)
                 self.xtouch.control_led('cycle', False)
@@ -302,12 +312,16 @@ class MidiHandler:
                 # we assume auto ISO, but we do not check that because the camera reports *actual* ISO value for some time
                 # after things like shutter half-release
                 self.xtouch.control_led('marker', False)
-                self.xtouch.control_led('nudge', True)
-                self.xtouch.control_led('cycle', False)
-            else:
-                self.xtouch.control_led('marker', False)
                 self.xtouch.control_led('nudge', False)
                 self.xtouch.control_led('cycle', True)
+            else:
+                self.xtouch.control_led('marker', False)
+                self.xtouch.control_led('nudge', True)
+                self.xtouch.control_led('cycle', True)
+            self.xtouch.control_led('drop', False)
+            self.xtouch.control_led('replace', False)
+            self.xtouch.control_led('click', False)
+            self.xtouch.control_led('solo', False)
             self.xtouch.control_led('zoom', self.target_camera.read_property('iso') == 'Auto')
 
             # AF
@@ -360,15 +374,19 @@ class MidiHandler:
                 except Exception:
                     pass  # might not be supported at all
 
+            if self.target_camera.read_property('autoexposuremode') == 'AV':
+                up_down_prop = 'exposurecompensation'
+            else:
+                up_down_prop = 'iso' if self.broken_auto_iso else 'exposurecompensation'
             if button == 'left':
                 self.target_camera.adjust_relative('aperture', -1)
             if button == 'right':
                 self.target_camera.adjust_relative('aperture', 1)
             if button == 'up':
-                self.target_camera.adjust_relative('exposurecompensation', 1)
+                self.target_camera.adjust_relative(up_down_prop, 1)
             if button == 'down':
-                self.target_camera.adjust_relative('exposurecompensation', -1)
-            if button == 'zoom':
+                self.target_camera.adjust_relative(up_down_prop, -1)
+            if button == 'zoom' and not self.broken_auto_iso:
                 self.target_camera.adjust_absolute('iso', 'Auto')
 
         elif self.midi_mode == self.MIDI_CONTROL_SHUTTER_AND_ISO:
@@ -380,7 +398,7 @@ class MidiHandler:
                 self.target_camera.adjust_relative('shutterspeed', -1)
             if button == 'right':
                 self.target_camera.adjust_relative('shutterspeed', 1)
-            if button == 'zoom':
+            if button == 'zoom' and not self.broken_auto_iso:
                 self.target_camera.adjust_absolute('iso', 'Auto')
 
         elif self.midi_mode == self.MIDI_CONTROL_WB:

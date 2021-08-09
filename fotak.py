@@ -54,7 +54,7 @@ class Camera:
             self.event_handler()
 
     def apply_command(self, what, value):
-        if what in ('exposurecompensation', 'aperture', 'whitebalance', 'shutterspeed',
+        if what in ('exposurecompensation', 'aperture', 'iso', 'shutterspeed',
                     'whitebalance', 'colortemperature', 'whitebalanceadjusta', 'whitebalanceadjustb',
                     'manualfocusdrive', 'movieservoaf'):
             cfg = self.cam.get_config()
