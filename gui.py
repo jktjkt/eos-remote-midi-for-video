@@ -6,7 +6,7 @@ import os
 import sys
 import threading
 
-from PySide2.QtCore import QObject, Signal, Slot, Property, QTimer, QThread
+from PySide2.QtCore import Qt, QObject, Signal, Slot, Property, QTimer, QThread
 from PySide2.QtGui import QGuiApplication
 from PySide2.QtQml import QQmlApplicationEngine
 
@@ -48,6 +48,16 @@ class CameraManager(QObject):
         self._selected_mode = None
         self._last_changed = None
         self._mqtt_send = None
+
+        def _expire_last_change():
+            self._last_changed = None
+            self.last_changed_changed.emit()
+        self._last_changed_timeout = QTimer()
+        self._last_changed_timeout.timeout.connect(_expire_last_change)
+        self._last_changed_timeout.setSingleShot(True)
+        self._last_changed_timeout.setInterval(666)
+        # self.connect(self, self.last_changed_changed, self._last_changed_timeout, self._last_changed_timeout.start, Qt.QueuedConnection)
+        self.last_changed_changed.connect(self._last_changed_timeout.start, Qt.QueuedConnection)
 
     def read_property(self, name):
         with self._lock:
@@ -95,7 +105,7 @@ class CameraManager(QObject):
                 print(f'Cannot increase {what} anymore')
                 # FIXME: blink something?
                 return
-            if idx+ delta < 0:
+            if idx + delta < 0:
                 print(f'Cannot decrease {what} anymore')
                 # FIXME: blink something?
                 return
@@ -298,6 +308,7 @@ class MidiHandler:
                 self.xtouch.control_led('marker', False)
                 self.xtouch.control_led('nudge', False)
                 self.xtouch.control_led('cycle', True)
+            self.xtouch.control_led('zoom', self.target_camera.read_property('iso') == 'Auto')
 
             # AF
             self.xtouch.control_led('scrub', self.target_camera.read_property('movieservoaf') == 'On')
@@ -311,6 +322,7 @@ class MidiHandler:
             self.xtouch.control_led('click', False)
             self.xtouch.control_led('solo', False)
             self.xtouch.control_led('scrub', False)
+            self.xtouch.control_led('zoom', self.target_camera.read_property('iso') == 'Auto')
 
         elif self.midi_mode == self.MIDI_CONTROL_WB:
             self.xtouch.control_led('marker', False)
@@ -321,6 +333,8 @@ class MidiHandler:
             self.xtouch.control_led('click', False)
             self.xtouch.control_led('solo', True)
             self.xtouch.control_led('scrub', self.target_camera.read_property('whitebalance') != 'Color Temperature')
+            self.xtouch.control_led('zoom', self.target_camera.read_property('whitebalanceadjusta') == '0'
+                                    and self.target_camera.read_property('whitebalanceadjustb') == '0')
 
     def handle_midi_button(self, button, pressed):
         if not pressed:

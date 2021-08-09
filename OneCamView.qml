@@ -81,8 +81,8 @@ ApplicationWindow {
                 implicitWidth: 100
                 Layout.fillWidth: true
                 Layout.fillHeight: true
-                border.color: camera.selected_mode == 'iso' ? '#6666ff' : '#333333'
-                border.width: camera.selected_mode == 'iso' ? 2 : 1
+                border.color: camera.last_changed == 'iso' ? '#ff6666' : camera.selected_mode == 'iso' ? '#6666ff' : '#333333'
+                border.width: camera.last_changed == 'iso' || camera.selected_mode == 'iso' ? 2 : 1
                 MouseArea {
                     anchors.fill: parent
                     onClicked: camera.selected_mode = 'iso'
@@ -97,7 +97,7 @@ ApplicationWindow {
                 implicitWidth: 100
                 Layout.fillWidth: true
                 Layout.fillHeight: true
-                border.color: camera.selected_mode == 'exposurecompensation' ? '#6666ff' : '#333333'
+                border.color: camera.last_changed == 'exposurecompensation' ? '#ff6666' : camera.selected_mode == 'exposurecompensation' ? '#6666ff' : '#333333'
                 border.width: camera.selected_mode == 'exposurecompensation' ? 2 : 1
                 MouseArea {
                     anchors.fill: parent
@@ -118,7 +118,7 @@ ApplicationWindow {
                 implicitWidth: 200
                 Layout.fillWidth: true
                 Layout.fillHeight: true
-                border.color: camera.selected_mode == 'wb' ? '#6666ff' : '#333333'
+                border.color: camera.last_changed.startsWith('whitebalance') || camera.last_changed == 'colortemperature' ? '#ff6666' : camera.selected_mode == 'wb' ? '#6666ff' : '#333333'
                 border.width: camera.selected_mode == 'wb' ? 2 : 1
                 MouseArea {
                     anchors.fill: parent
@@ -149,7 +149,7 @@ ApplicationWindow {
                 implicitWidth: 100
                 Layout.fillWidth: true
                 Layout.fillHeight: true
-                border.color: camera.selected_mode == 'movieservoaf' ? '#6666ff' : '#333333'
+                border.color: camera.last_changed == 'movieservoaf' || camera.last_changed == 'manualfocusdrive' ? '#ff6666' : camera.selected_mode == 'movieservoaf' ? '#6666ff' : '#333333'
                 border.width: camera.selected_mode == 'movieservoaf' ? 2 : 1
                 MouseArea {
                     anchors.fill: parent
