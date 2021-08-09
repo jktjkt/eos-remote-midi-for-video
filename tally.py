@@ -84,6 +84,7 @@ class Camera(threading.Thread):
         self.daemon = True
         self.event_handler = event_handler
         self.old_status = None
+        self.old_allowed = None
         self.queue = queue.Queue()
         self.on_death = on_death
         self.on_dump_allowed = on_dump_allowed
@@ -118,6 +119,13 @@ class Camera(threading.Thread):
 
     def on_config_changed(self):
         cfg = self.cam.get_config()
+        allowed = {}
+        for k in self.PROPS_RW + self.PROPS_RO + self.PROPS_WO:
+            try:
+                w = cfg.get_child_by_name(k)
+                allowed[k] = [x for x in w.get_choices()]
+            except gp.GPhoto2Error:
+                continue
         status = {}
         for name in self.PROPS_RO + self.PROPS_RW:
             try:
@@ -125,6 +133,9 @@ class Camera(threading.Thread):
             except gp.GPhoto2Error:
                 value = None
             status[name] = value
+        if self.old_allowed != allowed:
+            self.old_allowed = allowed
+            self.on_dump_allowed(allowed)
         if self.old_status != status:
             self.old_status = status
             self.event_handler(**status)
@@ -132,16 +143,8 @@ class Camera(threading.Thread):
     def apply_command(self, what, value):
         if what == 'DUMP':
             self.old_status = None
+            self.old_allowed = None
             self.on_config_changed()
-            cfg = self.cam.get_config()
-            allowed = {}
-            for k in self.PROPS_RW + self.PROPS_RO:
-                try:
-                    w = cfg.get_child_by_name(k)
-                    allowed[k] = [x for x in w.get_choices()]
-                except gp.GPhoto2Error:
-                    continue
-            self.on_dump_allowed(allowed)
             return
 
         if what in self.PROPS_RW + self.PROPS_WO:
