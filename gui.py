@@ -48,6 +48,7 @@ class CameraManager(QObject):
         self._selected_mode = None
         self._last_changed = None
         self._mqtt_send = None
+        self._status = None
 
         def _expire_last_change():
             self._last_changed = None
@@ -94,6 +95,7 @@ class CameraManager(QObject):
     colortemperature = Property(str, lambda self: self.read_property('colortemperature'), notify=camera_changed)
     whitebalanceadjusta = Property(str, lambda self: self.read_property('whitebalanceadjusta'), notify=camera_changed)
     whitebalanceadjustb = Property(str, lambda self: self.read_property('whitebalanceadjustb'), notify=camera_changed)
+    status = Property(str, lambda self: self._status, notify=camera_changed)
 
     def adjust_relative(self, what, delta):
         if what not in self._allowed:
@@ -213,9 +215,18 @@ async def update_camera_allowed(cameras, messages):
         cameras[camera_name].store_allowed(data)
 
 
+async def update_camera_status(cameras, messages):
+    async for message in messages:
+        _, camera_name, _ = message.topic.split('/', 2)
+        if not camera_name in cameras:
+            print(f'No camera handler for {message.topic}')
+            continue
+        cameras[camera_name]._status = message.payload.decode('utf-8')
+        cameras[camera_name].update_data(dict())
+
+
 class ShouldExit(Exception):
     pass
-
 
 
 class MessageBus(QThread):
@@ -249,7 +260,11 @@ class MessageBus(QThread):
             camera_update_msgs = await stack.enter_async_context(client.filtered_messages(topic_settings))
             tasks.add(asyncio.create_task(update_camera_screen(self.cameras, camera_update_msgs)))
 
-            for topic in (topic_allowed, topic_settings):
+            topic_status = 'camera/+/status'
+            camera_status_msgs = await stack.enter_async_context(client.filtered_messages(topic_status))
+            tasks.add(asyncio.create_task(update_camera_status(self.cameras, camera_status_msgs)))
+
+            for topic in (topic_allowed, topic_settings, topic_status):
                 await client.subscribe(topic)
 
             async def wait_for_requested_exit():
