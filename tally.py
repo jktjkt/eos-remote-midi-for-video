@@ -200,6 +200,7 @@ async def cancel_tasks(tasks):
 
 
 async def main(led):
+    led.preview(0x0, 0x0, 0xaa)
     loop = asyncio.get_running_loop()
     camera_exception_f = loop.create_future()
     camera_up_f = loop.create_future()
@@ -258,6 +259,8 @@ async def main(led):
                 will = am.Will(topic=topic_status, payload='offline', retain=True)
                 client = am.Client(sys.argv[1], keepalive=3, client_id=f'cam-{my_hostname}', will=will)
                 await stack.enter_async_context(client)
+                print("tally: connected to MQTT")
+                led.preview(0x0, 0x0, 0x0)
 
                 tally_msgs = await stack.enter_async_context(client.filtered_messages(topic_tally))
                 tasks.add(asyncio.create_task(do_tally_light(led, tally_msgs), name='mqtt->tally'))
