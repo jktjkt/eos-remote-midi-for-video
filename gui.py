@@ -6,11 +6,35 @@ import os
 import sys
 import threading
 
-from PySide2.QtCore import Qt, QObject, Signal, Slot, Property, QTimer, QThread
+from PySide2.QtCore import Qt, QCoreApplication, QEvent, QObject, Signal, Slot, Property, QTimer, QThread
 from PySide2.QtGui import QGuiApplication
-from PySide2.QtQml import QQmlApplicationEngine
+from PySide2.QtQml import QQmlApplicationEngine, QQmlContext
 
 import xtouch
+
+
+class InvokeEvent(QEvent):
+    EVENT_TYPE = QEvent.Type(QEvent.registerEventType())
+
+    def __init__(self, fn, *args, **kwargs):
+        QEvent.__init__(self, InvokeEvent.EVENT_TYPE)
+        self.fn = fn
+        self.args = args
+        self.kwargs = kwargs
+
+
+class Invoker(QObject):
+    def event(self, event):
+        event.fn(*event.args, **event.kwargs)
+
+        return True
+
+
+_invoker = Invoker()
+
+
+def invoke_in_main_thread(fn, *args, **kwargs):
+    QCoreApplication.postEvent(_invoker, InvokeEvent(fn, *args, **kwargs))
 
 
 class CameraManager(QObject):
@@ -18,8 +42,8 @@ class CameraManager(QObject):
         QObject.__init__(self)
         self._camera_name = name
         self._data = {
-            'cameramodel': '<camera>',
-            'lensname': '<lens>',
+            'cameramodel': None,
+            'lensname': None,
             'autoexposuremode': '<aemode>',
             'autoexposuremodedial': '<dial>',
             'aperture': '<aperture>',
@@ -72,6 +96,10 @@ class CameraManager(QObject):
                     continue
                 self._data[k] = v
                 self._update_last_change(k)
+            try:
+                print(f'{self._camera_name} {self._data["cameramodel"]} {self._data["lensname"]}')
+            except:
+                pass
         self.camera_changed.emit()  # FIXME: is it OK to emit like this?
 
     def store_allowed(self, data):
@@ -117,12 +145,10 @@ class CameraManager(QObject):
                 return
             self._send_via_mqtt(what, new_value)
 
-
     def adjust_absolute(self, what, value):
         if what not in self._allowed:
             raise Exception(f'Cannot control unknown parameter {what}')
         self._send_via_mqtt(what, value)
-
 
     def get_selected_mode(self):
         return self._selected_mode
@@ -177,6 +203,34 @@ class CameraManager(QObject):
 
     last_changed_changed = Signal()
     last_changed = Property(str, lambda self: self._last_changed, notify=last_changed_changed)
+
+
+class FakeCamera(QObject):
+    camera_changed = Signal()
+    cameramodel = Property(str, lambda self: None, notify=camera_changed)
+    lensname = Property(str, lambda self: None, notify=camera_changed)
+    autoexposuremode = Property(str, lambda self: None, notify=camera_changed)
+    autoexposuremodedial = Property(str, lambda self: None, notify=camera_changed)
+    aperture = Property(str, lambda self: None, notify=camera_changed)
+    shutterspeed = Property(str, lambda self: None, notify=camera_changed)
+    exposurecompensation = Property(str, lambda self: None, notify=camera_changed)
+    iso = Property(str, lambda self: None, notify=camera_changed)
+    movieservoaf = Property(str, lambda self: None, notify=camera_changed)
+    whitebalance = Property(str, lambda self: None, notify=camera_changed)
+    colortemperature = Property(str, lambda self: None, notify=camera_changed)
+    whitebalanceadjusta = Property(str, lambda self: None, notify=camera_changed)
+    whitebalanceadjustb = Property(str, lambda self: None, notify=camera_changed)
+    status = Property(str, lambda self: 'No camera selected', notify=camera_changed)
+    last_changed = Property(str, lambda self: '', notify=camera_changed)
+
+    def adjust_relative(self, what, delta):
+        print(f'No camera selected, cannot control {what}')
+
+    def adjust_absolute(self, what, value):
+        print(f'No camera selected, cannot control {what}')
+
+    def read_property(self, name):
+        return None
 
 
 async def cancel_tasks(tasks):
@@ -298,15 +352,26 @@ class MidiHandler:
     MIDI_CONTROL_SHUTTER_AND_ISO = 2
     MIDI_CONTROL_WB = 3
 
-    def __init__(self, target_camera):
-        self.target_camera = target_camera
+    def __init__(self, switch_camera):
+        self.target_camera = None
+        self._fake_camera = FakeCamera()
         self.midi_mode = self.MIDI_CONTROL_FANCY
         self.broken_auto_iso = False
         self.xtouch = xtouch.XTouch('X-Touch X-TOUCH_INT',
                                     on_wheel=lambda diff: self.handle_midi_wheel(diff),
                                     on_button=lambda button, pressed: self.handle_midi_button(button, pressed))
+        self.select_camera(self._fake_camera)
+        self._switch_camera = switch_camera
+
+    def select_camera(self, target_camera):
+        if target_camera == self.target_camera:
+            return
+        if self.target_camera is not None:
+            self.target_camera.camera_changed.disconnect()
+        self.target_camera = target_camera
         self.target_camera.camera_changed.connect(lambda: self.propagate_to_midi())
         self.propagate_to_midi()
+        self.target_camera.camera_changed.emit()  # FIXME: is it OK to emit like this?
 
     def propagate_to_midi(self):
         self.broken_auto_iso = self.target_camera.read_property('cameramodel') in (
@@ -314,7 +379,10 @@ class MidiHandler:
             'Canon EOS 5D Mark II',
             'Canon EOS 5D Mark III',
         )
-        if self.midi_mode == self.MIDI_CONTROL_FANCY:
+        if self.target_camera is self._fake_camera:
+            for ctrl in ('marker', 'nudge', 'cycle', 'drop', 'replace', 'click', 'solo'):
+                self.xtouch.control_led(ctrl, False)
+        elif self.midi_mode == self.MIDI_CONTROL_FANCY:
             if self.broken_auto_iso:
                 self.xtouch.control_led('marker', True)
                 self.xtouch.control_led('nudge', True)
@@ -381,6 +449,15 @@ class MidiHandler:
             self.midi_mode = self.MIDI_CONTROL_WB
             self.propagate_to_midi()
             return
+
+        if button == 'previous':
+            self._switch_camera('5d3')
+        elif button == 'next':
+            self._switch_camera('5d4')
+        elif button == 'stop':
+            self._switch_camera('rp')
+        elif button in ('play', 'rec'):
+            self._switch_camera(None)
 
         if self.midi_mode == self.MIDI_CONTROL_FANCY:
             if button == 'scrub':
@@ -465,13 +542,43 @@ if __name__ == "__main__":
 
     engine = QQmlApplicationEngine()
 
-    cams = dict((name, CameraManager(name)) for name in ('rpi-00000000ef688e57', 'rpi-00000000e7ee04d2',))
+    cams = dict((name, CameraManager(name)) for name in (
+        #'rpi-00000000ef688e57',
+        #'rpi-00000000e7ee04d2',
 
-    tmp_cam = cams['rpi-00000000e7ee04d2']
-    # tmp_cam = cams['rpi-00000000ef688e57']
+        # 5Diii 35
+        'rpi-00000000d56be96f',
+        # 5Div 70-200
+        'rpi-00000000b3a1193a',
+        # WTF?
+        'rpi-00000000ef688e57',
+        # RP Fortna
+        'rpi-00000000e7ee04d2',
+    ))
 
-    ctx = engine.rootContext()
-    ctx.setContextProperty("camera", tmp_cam)
+    def switch_camera(which):
+        if which == '5d3':
+            tmp_cam = cams['rpi-00000000d56be96f']
+            target_led = 'previous'
+        elif which == '5d4':
+            tmp_cam = cams['rpi-00000000b3a1193a']
+            target_led = 'next'
+        elif which == 'rp':
+            tmp_cam = cams['rpi-00000000e7ee04d2']
+            target_led = 'stop'
+        else:
+            tmp_cam = midi_ctl._fake_camera
+            target_led = None
+        ctx = engine.rootContext()
+        invoke_in_main_thread(QQmlContext.setContextProperty, ctx, "camera", tmp_cam)
+        midi_ctl.select_camera(tmp_cam)
+        for led in 'previous', 'next', 'stop', 'play', 'rec':
+            midi_ctl.xtouch.control_led(led, target_led == led)
+        if target_led is None:
+            for led in (
+                'marker', 'nudge', 'cycle', 'drop', 'replace', 'click', 'solo', 'scrub',
+                'zoom', 'left', 'right', 'up', 'down'):
+                midi_ctl.xtouch.control_led(led, False)
 
     # timer = QTimer()
     # timer.timeout.connect(lambda: camera.update_data({'iso': '200'} if camera.read_property('iso') == '100' else {'iso': '100'}))
@@ -485,7 +592,9 @@ if __name__ == "__main__":
     bus.start()
     bus.start_event.wait()
 
-    midi_ctl = MidiHandler(tmp_cam)
+    midi_ctl = MidiHandler(switch_camera=switch_camera)
+
+    switch_camera('')
 
     ret = app.exec_()
     bus.request_exit()
