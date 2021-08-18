@@ -454,9 +454,11 @@ class MidiHandler:
             self._switch_camera('5d3')
         elif button == 'next':
             self._switch_camera('5d4')
-        elif button == 'stop':
-            self._switch_camera('rp')
-        elif button in ('play', 'rec'):
+        elif button == 'play':
+            self._switch_camera('rp35')
+        elif button == 'rec':
+            self._switch_camera('rp85')
+        elif button in ('stop',):
             self._switch_camera(None)
 
         if self.midi_mode == self.MIDI_CONTROL_FANCY:
@@ -554,6 +556,8 @@ if __name__ == "__main__":
         'rpi-00000000ef688e57',
         # RP Fortna
         'rpi-00000000e7ee04d2',
+        # RP 85 fortna
+        'rpi-00000000363468bb',
     ))
 
     def switch_camera(which):
@@ -563,9 +567,12 @@ if __name__ == "__main__":
         elif which == '5d4':
             tmp_cam = cams['rpi-00000000b3a1193a']
             target_led = 'next'
-        elif which == 'rp':
+        elif which == 'rp35':
             tmp_cam = cams['rpi-00000000e7ee04d2']
-            target_led = 'stop'
+            target_led = 'play'
+        elif which == 'rp85':
+            tmp_cam = cams['rpi-00000000363468bb']
+            target_led = 'rec'
         else:
             tmp_cam = midi_ctl._fake_camera
             target_led = None
