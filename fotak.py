@@ -146,6 +146,7 @@ ENCODER_TO_FUNCTION = {
     'exposurecompensation': 1,
     'aperture': 2,
     'shutterspeed': 3,
+    'iso': 4,
     'colortemperature': 5,
     'whitebalanceadjusta': 6,
     'whitebalanceadjustb': 7,
@@ -166,6 +167,8 @@ def results_for_function(function):
         return [str(x) for x in range(2500, 10001, 100)]
     if function in ('whitebalanceadjusta', 'whitebalanceadjustb'):
         return [str(x) for x in range(-9, 10)]
+    if function == 'iso':
+        return ['Auto'] + [str(x) for x in (100, 125, 160, 200, 250, 320, 400, 500, 640, 800, 1000, 1250, 1600, 2000, 2500, 3200, 4000, 5000, 6400, 8000, 10000, 12800, 16000, 20000, 25600)]
     return None
 
 
@@ -327,7 +330,8 @@ class Handler:
     def __init__(self):
         self.midi = None
         self.camera = Camera(event_handler=lambda **kwargs: self.on_camera_change(**kwargs))
-        self.midi = XTouchMini('X-TOUCH MINI:X-TOUCH MINI MIDI 1 40:0', on_change=lambda what, value: self.on_midi_change(what, value))
+        self.midi = XTouchMini('X-TOUCH MINI MIDI 1', on_change=lambda what, value: self.on_midi_change(what, value))
+        # self.midi = XTouchMini('X-TOUCH MINI:X-TOUCH MINI MIDI 1 40:0', on_change=lambda what, value: self.on_midi_change(what, value))
         self.old = None
 
     def on_camera_change(self):
