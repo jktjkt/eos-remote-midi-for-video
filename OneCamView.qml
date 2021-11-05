@@ -176,12 +176,46 @@ ApplicationWindow {
                 Layout.preferredHeight: 50
 
                 Rectangle {
-                    implicitWidth: 100
+                    implicitWidth: 60
                     Layout.fillWidth: true
                     Layout.fillHeight: true
                     Text {
                         text: camera.cameramodel
                         anchors.fill: parent
+                    }
+                }
+
+                Rectangle {
+                    implicitWidth: 40
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    color: {
+                        if (camera.tally == "program") {
+                            return "red";
+                        } else if (camera.tally == "preview") {
+                            return "green";
+                        } else {
+                            return "transparent";
+                        }
+                    }
+                    Text {
+                        text: {
+                            if (camera.tally == "program") {
+                                return "live";
+                            } else if (camera.tally == "preview") {
+                                return "preview";
+                            } else {
+                                return camera.tally;
+                            }
+                        }
+                        anchors.centerIn: parent
+                        color: {
+                            if (camera.tally == "program" || camera.tally == "preview") {
+                                return "white";
+                            } else {
+                                return "black";
+                            }
+                        }
                     }
                 }
 

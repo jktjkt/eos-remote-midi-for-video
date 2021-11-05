@@ -38,9 +38,10 @@ def invoke_in_main_thread(fn, *args, **kwargs):
 
 
 class CameraManager(QObject):
-    def __init__(self, name):
+    def __init__(self, name, switcher_input):
         QObject.__init__(self)
         self._camera_name = name
+        self._switcher_input = switcher_input
         self._data = {
             'cameramodel': None,
             'lensname': None,
@@ -71,8 +72,10 @@ class CameraManager(QObject):
         self._lock = threading.Lock()
         self._selected_mode = None
         self._last_changed = None
-        self._mqtt_send = None
+        self._mqtt_send_cam = None
+        self._mqtt_send_tally = None
         self._status = None
+        self._tally = ''
 
         def _expire_last_change():
             self._last_changed = None
@@ -109,6 +112,7 @@ class CameraManager(QObject):
                 self._allowed[k] = v
 
     camera_changed = Signal()
+    tally_changed = Signal()
 
     cameramodel = Property(str, lambda self: self.read_property('cameramodel'), notify=camera_changed)
     lensname = Property(str, lambda self: self.read_property('lensname'), notify=camera_changed)
@@ -124,6 +128,7 @@ class CameraManager(QObject):
     whitebalanceadjusta = Property(str, lambda self: self.read_property('whitebalanceadjusta'), notify=camera_changed)
     whitebalanceadjustb = Property(str, lambda self: self.read_property('whitebalanceadjustb'), notify=camera_changed)
     status = Property(str, lambda self: self._status, notify=camera_changed)
+    tally = Property(str, lambda self: self._tally, notify=tally_changed)
 
     def adjust_relative(self, what, delta):
         if what not in self._allowed:
@@ -196,9 +201,9 @@ class CameraManager(QObject):
         self.last_changed_changed.emit()
 
     def _send_via_mqtt(self, key, value):
-        if self._mqtt_send is not None:
+        if self._mqtt_send_cam is not None:
             print(f'set {key} -> {value}')
-            self._mqtt_send(self._camera_name, key, value)
+            self._mqtt_send_cam(self._camera_name, key, value)
             self._update_last_change(key)
 
     last_changed_changed = Signal()
@@ -221,6 +226,7 @@ class FakeCamera(QObject):
     whitebalanceadjusta = Property(str, lambda self: None, notify=camera_changed)
     whitebalanceadjustb = Property(str, lambda self: None, notify=camera_changed)
     status = Property(str, lambda self: 'No camera selected', notify=camera_changed)
+    tally = Property(str, lambda self: 'on-air', notify=camera_changed)
     last_changed = Property(str, lambda self: '', notify=camera_changed)
 
     def adjust_relative(self, what, delta):
@@ -279,6 +285,31 @@ async def update_camera_status(cameras, messages):
         cameras[camera_name].update_data(dict())
 
 
+async def update_camera_tally(cameras, messages):
+    async for message in messages:
+        tally = json.loads(message.payload)['tally']
+        for name, cam in cameras.items():
+            if cam._switcher_input is not None:
+                if cam._switcher_input not in tally.keys():
+                    print(f'Wrong input definition for {cam._camera_name}')
+                    continue
+                if cam._mqtt_send_tally is not None:
+                    is_program, is_preview = tally[cam._switcher_input]
+                    if is_program:
+                        cam._mqtt_send_tally(name, 'tally', '80')
+                        cam._mqtt_send_tally(name, 'preview', '50 0 0')
+                        cam._tally = 'program'
+                    elif is_preview:
+                        cam._mqtt_send_tally(name, 'tally', '0')
+                        cam._mqtt_send_tally(name, 'preview', '0 20 0')
+                        cam._tally = 'preview'
+                    else:
+                        cam._mqtt_send_tally(name, 'tally', '0')
+                        cam._mqtt_send_tally(name, 'preview', '0 0 0')
+                        cam._tally = ''
+                    cam.tally_changed.emit()  # FIXME: is it OK to emit like this?
+
+
 class ShouldExit(Exception):
     pass
 
@@ -318,7 +349,11 @@ class MessageBus(QThread):
             camera_status_msgs = await stack.enter_async_context(client.filtered_messages(topic_status))
             tasks.add(asyncio.create_task(update_camera_status(self.cameras, camera_status_msgs)))
 
-            for topic in (topic_allowed, topic_settings, topic_status):
+            topic_atem_tally_source = 'atem/+/tally-source'
+            atem_tally_msgs = await stack.enter_async_context(client.filtered_messages(topic_atem_tally_source))
+            tasks.add(asyncio.create_task(update_camera_tally(self.cameras, atem_tally_msgs)))
+
+            for topic in (topic_allowed, topic_settings, topic_status, topic_atem_tally_source):
                 await client.subscribe(topic)
 
             async def wait_for_requested_exit():
@@ -327,12 +362,17 @@ class MessageBus(QThread):
 
             tasks.add(asyncio.create_task(wait_for_requested_exit()))
 
-            def on_mqtt_send_requested(camera_name, key, value):
+            def on_mqtt_send_cam_requested(camera_name, key, value):
                 if client is not None:
                     asyncio.run_coroutine_threadsafe(client.publish(f'camera/{camera_name}/set/{key}', value), loop)
 
+            def on_mqtt_send_tally_requested(camera_name, led, value):
+                if client is not None:
+                    asyncio.run_coroutine_threadsafe(client.publish(f'camera/{camera_name}/{led}', value), loop)
+
             for camera in self.cameras.values():
-                camera._mqtt_send = on_mqtt_send_requested
+                camera._mqtt_send_cam = on_mqtt_send_cam_requested
+                camera._mqtt_send_tally = on_mqtt_send_tally_requested
 
             self.start_event.set()
 
@@ -459,7 +499,7 @@ class MidiHandler:
         elif button == 'rec':
             self._switch_camera('rp85')
         elif button in ('stop',):
-            self._switch_camera(None)
+            self._switch_camera('wtf')
 
         if self.midi_mode == self.MIDI_CONTROL_FANCY:
             if button == 'scrub':
@@ -544,20 +584,22 @@ if __name__ == "__main__":
 
     engine = QQmlApplicationEngine()
 
-    cams = dict((name, CameraManager(name)) for name in (
+    cams = dict((name, CameraManager(name, switcher_input)) for name, switcher_input in (
         #'rpi-00000000ef688e57',
         #'rpi-00000000e7ee04d2',
 
         # 5Diii 35
-        'rpi-00000000d56be96f',
+        ('rpi-00000000d56be96f', None),
         # 5Div 70-200
-        'rpi-00000000b3a1193a',
+        ('rpi-00000000b3a1193a', None),
         # WTF?
-        'rpi-00000000ef688e57',
+        ('rpi-00000000ef688e57', None),
         # RP Fortna
-        'rpi-00000000e7ee04d2',
+        ('rpi-00000000e7ee04d2', None),
         # RP 85 fortna
-        'rpi-00000000363468bb',
+        ('rpi-00000000363468bb', None),
+        # with that wooden thingy
+        ('rpi-00000000538f432e', '3'),
     ))
 
     def switch_camera(which):
@@ -573,6 +615,9 @@ if __name__ == "__main__":
         elif which == 'rp85':
             tmp_cam = cams['rpi-00000000363468bb']
             target_led = 'rec'
+        elif which == 'wtf':
+            tmp_cam = cams['rpi-00000000538f432e']
+            target_led = 'stop'
         else:
             tmp_cam = midi_ctl._fake_camera
             target_led = None
