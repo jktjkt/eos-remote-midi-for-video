@@ -12,7 +12,7 @@ let
     version = "2021-06-30";
     src = /home/jkt/work/prog/gphoto2;
   });
-  my_python = pkgs.python38;
+  my_python = pkgs.python39;
   # my_python_gphoto2 = my_python.pkgs.buildPythonPackage rec {
   # };
   my_python_gphoto2 = my_python.pkgs.gphoto2.override {
@@ -30,8 +30,8 @@ in pkgs.mkShell rec {
     my_python_gphoto2
     gphoto2
 
-    my_python.pkgs.python-language-server
-    my_python.pkgs.rope
+    # my_python.pkgs.python-language-server
+    # my_python.pkgs.rope
     my_python.pkgs.asyncio-mqtt
     my_python.pkgs.pyside2
   ];
