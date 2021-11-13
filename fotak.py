@@ -102,7 +102,8 @@ class Handler:
     def __init__(self):
         self.midi = None
         self.camera = Camera(event_handler=lambda **kwargs: self.on_camera_change(**kwargs))
-        self.midi = XTouchMini('X-TOUCH MINI MIDI 1', on_change=lambda what, value: self.on_midi_change(what, value))
+        self.midi = XTouchMini('X-TOUCH MINI MIDI 1', on_change=lambda what, value: self.on_midi_change(what, value),
+                               on_button=lambda button, down: None)
         # self.midi = XTouchMini('X-TOUCH MINI:X-TOUCH MINI MIDI 1 40:0', on_change=lambda what, value: self.on_midi_change(what, value))
         self.old = None
 

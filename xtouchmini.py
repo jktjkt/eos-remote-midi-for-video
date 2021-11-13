@@ -88,7 +88,7 @@ def function_for_encoder(encoder):
 
 
 class XTouchMini:
-    def __init__(self, name, on_change):
+    def __init__(self, name, on_change, on_button):
         self.m_in = mido.open_input(name, callback=lambda x: self.on_midi(x))
         self.m_out = mido.open_output(name)
 
@@ -110,6 +110,7 @@ class XTouchMini:
                 self.m_out.send(mido.Message('control_change', channel=10, control=control + 1, value=self.faders[control]))
 
         self.on_change = on_change
+        self.on_button = on_button
         self.results = [results_for_function(function_for_encoder(encoder)) for encoder in range(0, 8)]
 
     def range_for(self, encoder):
@@ -232,6 +233,19 @@ class XTouchMini:
                 if function == 'focus':
                     self.on_change('movieservoaf', 'On')
                     self.leds_special(message.note, 'all-on')
+            elif message.note >= 8 and message.note <= 23:
+                button = message.note - 8
+                self.on_button(button, message.type == 'note_on')
         else:
             print(f'!!! unhandled MIDI in: {message}')
 
+    def set_led(self, button, state):
+        if state == 'off':
+            velocity = 0
+        elif state == 'on':
+            velocity = 1
+        elif state == 'blink':
+            velocity = 2
+        else:
+            raise ValueError(f'Only on/off/blink supported, got {state}')
+        self.m_out.send(mido.Message('note_on', channel=10, note=button + 8, velocity=velocity))
