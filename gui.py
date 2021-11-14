@@ -11,6 +11,7 @@ from PySide2.QtGui import QGuiApplication
 from PySide2.QtQml import QQmlApplicationEngine, QQmlContext
 
 import xtouch
+import xtouchmini
 
 
 class InvokeEvent(QEvent):
@@ -129,6 +130,7 @@ class CameraManager(QObject):
     whitebalanceadjustb = Property(str, lambda self: self.read_property('whitebalanceadjustb'), notify=camera_changed)
     status = Property(str, lambda self: self._status, notify=camera_changed)
     tally = Property(str, lambda self: self._tally, notify=tally_changed)
+    switcher_input = Property(str, lambda self: self._switcher_input, notify=camera_changed)
 
     def adjust_relative(self, what, delta):
         if what not in self._allowed:
@@ -228,6 +230,7 @@ class FakeCamera(QObject):
     status = Property(str, lambda self: 'No camera selected', notify=camera_changed)
     tally = Property(str, lambda self: 'on-air', notify=camera_changed)
     last_changed = Property(str, lambda self: '', notify=camera_changed)
+    switcher_input = Property(str, lambda self: None, notify=camera_changed)
 
     def adjust_relative(self, what, delta):
         print(f'No camera selected, cannot control {what}')
@@ -320,6 +323,7 @@ class MessageBus(QThread):
         self.cameras = cameras
         self.start_event = threading.Event()
         self.exit_future = None
+        self._switch_aux = None
 
     def request_exit(self):
         # can be only called when self.start_event was waited for
@@ -373,6 +377,13 @@ class MessageBus(QThread):
             for camera in self.cameras.values():
                 camera._mqtt_send_cam = on_mqtt_send_cam_requested
                 camera._mqtt_send_tally = on_mqtt_send_tally_requested
+
+            def on_mqtt_send_aux_out(output):
+                if client is not None:
+                    data = {'index': 0, 'source': output}
+                    asyncio.run_coroutine_threadsafe(client.publish(f'atem/extreme/set/aux-source', json.dumps(data)), loop)
+
+            self._switch_aux = on_mqtt_send_aux_out
 
             self.start_event.set()
 
@@ -491,15 +502,15 @@ class MidiHandler:
             return
 
         if button == 'previous':
-            self._switch_camera('5d3')
+            self._switch_camera('btn1')
         elif button == 'next':
-            self._switch_camera('5d4')
-        elif button == 'play':
-            self._switch_camera('rp35')
-        elif button == 'rec':
-            self._switch_camera('rp85')
+            self._switch_camera('btn2')
         elif button in ('stop',):
-            self._switch_camera('wtf')
+            self._switch_camera('btn3')
+        elif button == 'play':
+            self._switch_camera('btn4')
+        elif button == 'rec':
+            self._switch_camera('btn5')
 
         if self.midi_mode == self.MIDI_CONTROL_FANCY:
             if button == 'scrub':
@@ -577,6 +588,98 @@ class MidiHandler:
             self.target_camera.adjust_relative('colortemperature', 1 if diff > 0 else -1)
 
 
+class MiniMidiHandler:
+    def __init__(self, switch_camera, switch_aux):
+        self.target_camera = None
+        self._fake_camera = FakeCamera()
+        self.xtouch = xtouchmini.XTouchMini('X-TOUCH MINI MIDI 1',
+                                            on_change=lambda what, value: self.on_midi_change(what, value),
+                                            on_button=lambda button, down: self.on_midi_button(button, down))
+        self.select_camera(self._fake_camera)
+        self._switch_camera = switch_camera
+        self.on_midi_button(14, False)
+        self._switch_aux = switch_aux
+
+    def on_midi_change(self, what, value):
+        print(f'on_midi_change: {what=} {value=}')
+        allowed = self.target_camera._allowed[what]
+        if value in allowed:
+            self.target_camera.adjust_absolute(what, value)
+        else:
+            print(f'!! Cannot set {what} to {value}. Allowed: {allowed}')
+            self.propagate_to_midi()
+
+    def on_midi_button(self, button, down):
+        if down:
+            return
+        if button >= 0 and button <= 7:
+            self._switch_camera(str(button + 1))
+            # for x in range(0, 9):
+            #     self.xtouch.set_led(x, 'on' if x == button else 'off')
+        elif button == 14:
+            self._auto_switch_aux = True
+            self.xtouch.set_led(14, 'on')
+            self.xtouch.set_led(15, 'off')
+            if self.target_camera.switcher_input:
+                self._switch_aux(str(self.target_camera.switcher_input))
+        elif button == 15:
+            self._switch_aux('MVW')
+            self._auto_switch_aux = False
+            self.xtouch.set_led(14, 'off')
+            self.xtouch.set_led(15, 'on')
+
+    def select_camera(self, target_camera):
+        for x in range(0, 9):
+            self.xtouch.set_led(x, 'on' if target_camera.switcher_input == str(x + 1) else 'off')
+        if target_camera == self.target_camera:
+            return
+        if self.target_camera is not None:
+            self.target_camera.camera_changed.disconnect()
+        self.target_camera = target_camera
+        self.target_camera.camera_changed.connect(lambda: self.propagate_to_midi())
+        self.target_camera.camera_changed.emit()  # FIXME: is it OK to emit like this?
+
+    def propagate_to_midi(self):
+        if self.target_camera.read_property('cameramodel') is None:
+            for encoder in xtouchmini.ENCODER_TO_FUNCTION.values():
+                self.xtouch.leds_special(encoder, 'off')
+            return
+
+        for key, encoder in xtouchmini.ENCODER_TO_FUNCTION.items():
+            if key == 'focus':
+                # magic
+                if self.target_camera.read_property('movieservoaf') == 'On':
+                    self.xtouch.leds_special(encoder, 'all-on')
+                else:
+                    self.xtouch.leds_special(encoder, 'blink-center')
+                continue
+
+            val = self.target_camera.read_property(key)
+            known_values = xtouchmini.results_for_function(key)
+            try:
+                idx = known_values.index(val)
+            except ValueError:
+                idx = None
+            if idx is not None:
+                midi_val = self.xtouch.range_for(encoder)[idx]
+                print(f' midi: encoder {encoder} -> #{known_values.index(val)} (out of {len(known_values)})')
+                self.xtouch.do_set_value(encoder, midi_val)
+            else:
+                print(f' midi: encoder {encoder}: no match for value {val}')
+                self.xtouch.leds_special(encoder, 'blink-all')
+
+            if key == 'colortemperature':
+                wb = self.target_camera.read_property('whitebalance')
+                if wb == 'Color Temperature':
+                    pass
+                elif wb == 'Auto':
+                    print(f' midi: encoder {encoder}: all-on for AWB')
+                    self.xtouch.leds_special(encoder, 'all-on')
+                else:
+                    print(f' midi: encoder {encoder}: WB neither AWB nor K')
+                    self.xtouch.leds_special(encoder, 'blink-all')
+
+
 
 if __name__ == "__main__":
     os.environ["QT_QUICK_CONTROLS_STYLE"] = "Material"
@@ -588,36 +691,42 @@ if __name__ == "__main__":
         #'rpi-00000000ef688e57',
         #'rpi-00000000e7ee04d2',
 
+        # rpi-00000000363468bb: vlevo 35mm, 172.26.70.19
+        ('rpi-00000000363468bb', '6'),
+        # rpi-00000000e7ee04d2: vpravo 35mm, 172.26.70.20
+        ('rpi-00000000e7ee04d2', '7'),
+        # rpi-00000000d56be96f: uprostred tele, 172.26.70.21
+        ('rpi-00000000d56be96f', '5'),
+        # rpi-00000000ef688e57: 24-105 vzadu, 172.26.70.34
+        ('rpi-00000000ef688e57', '3'),
+
         # 5Diii 35
-        ('rpi-00000000d56be96f', None),
+        # ('rpi-00000000d56be96f', None),
         # 5Div 70-200
-        ('rpi-00000000b3a1193a', None),
+        # ('rpi-00000000b3a1193a', None),
         # WTF?
-        ('rpi-00000000ef688e57', None),
+        # ('rpi-00000000ef688e57', None),
         # RP Fortna
-        ('rpi-00000000e7ee04d2', None),
-        # RP 85 fortna
-        ('rpi-00000000363468bb', None),
         # with that wooden thingy
-        ('rpi-00000000538f432e', '3'),
+        # ('rpi-00000000538f432e', '3'),
     ))
 
-    def switch_camera(which):
-        if which == '5d3':
+    def switch_camera_xtouch(which):
+        if which == 'btn1':
             tmp_cam = cams['rpi-00000000d56be96f']
             target_led = 'previous'
-        elif which == '5d4':
-            tmp_cam = cams['rpi-00000000b3a1193a']
-            target_led = 'next'
-        elif which == 'rp35':
-            tmp_cam = cams['rpi-00000000e7ee04d2']
-            target_led = 'play'
-        elif which == 'rp85':
+        elif which == 'btn2':
             tmp_cam = cams['rpi-00000000363468bb']
-            target_led = 'rec'
-        elif which == 'wtf':
-            tmp_cam = cams['rpi-00000000538f432e']
+            target_led = 'next'
+        elif which == 'btn3':
+            tmp_cam = cams['rpi-00000000e7ee04d2']
             target_led = 'stop'
+        elif which == 'btn4':
+            tmp_cam = cams['rpi-00000000ef688e57']
+            target_led = 'play'
+        # elif which == 'btn5':
+        #     tmp_cam = cams['rpi-00000000538f432e']
+        #     target_led = 'rec'
         else:
             tmp_cam = midi_ctl._fake_camera
             target_led = None
@@ -632,6 +741,17 @@ if __name__ == "__main__":
                 'zoom', 'left', 'right', 'up', 'down'):
                 midi_ctl.xtouch.control_led(led, False)
 
+    def switch_camera_xtouch_mini(which):
+        ctx = engine.rootContext()
+        target_cam = next((cam for cam in cams.values() if cam.switcher_input == str(which)), midi_ctl._fake_camera)
+        invoke_in_main_thread(QQmlContext.setContextProperty, ctx, "camera", target_cam)
+        midi_ctl.select_camera(target_cam)
+        if target_cam is not midi_ctl._fake_camera and midi_ctl._auto_switch_aux:
+            midi_ctl._switch_aux(str(which))
+        else:
+            midi_ctl._switch_aux('MVW')
+
+
     # timer = QTimer()
     # timer.timeout.connect(lambda: camera.update_data({'iso': '200'} if camera.read_property('iso') == '100' else {'iso': '100'}))
     # timer.start(1000)
@@ -644,9 +764,10 @@ if __name__ == "__main__":
     bus.start()
     bus.start_event.wait()
 
-    midi_ctl = MidiHandler(switch_camera=switch_camera)
-
-    switch_camera('')
+    # midi_ctl = MidiHandler(switch_camera=switch_camera_xtouch)
+    # switch_camera_xtouch('')
+    midi_ctl = MiniMidiHandler(switch_camera=switch_camera_xtouch_mini, switch_aux=bus._switch_aux)
+    switch_camera_xtouch_mini('')
 
     ret = app.exec_()
     bus.request_exit()
