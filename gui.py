@@ -39,7 +39,7 @@ def invoke_in_main_thread(fn, *args, **kwargs):
 
 
 class CameraManager(QObject):
-    def __init__(self, name, switcher_input):
+    def __init__(self, name, switcher_input, do_tally):
         QObject.__init__(self)
         self._camera_name = name
         self._switcher_input = switcher_input
@@ -77,6 +77,7 @@ class CameraManager(QObject):
         self._mqtt_send_tally = None
         self._status = None
         self._tally = ''
+        self._do_tally = do_tally
 
         def _expire_last_change():
             self._last_changed = None
@@ -299,7 +300,7 @@ async def update_camera_tally(cameras, messages):
                 if cam._mqtt_send_tally is not None:
                     is_program, is_preview = tally[cam._switcher_input]
                     if is_program:
-                        cam._mqtt_send_tally(name, 'tally', '80')
+                        cam._mqtt_send_tally(name, 'tally', '80' if cam._do_tally else '0')
                         cam._mqtt_send_tally(name, 'preview', '50 0 0')
                         cam._tally = 'program'
                     elif is_preview:
@@ -687,18 +688,23 @@ if __name__ == "__main__":
 
     engine = QQmlApplicationEngine()
 
-    cams = dict((name, CameraManager(name, switcher_input)) for name, switcher_input in (
+    cams = dict((name, CameraManager(name, switcher_input, do_tally)) for name, switcher_input, do_tally in (
         #'rpi-00000000ef688e57',
         #'rpi-00000000e7ee04d2',
 
-        # rpi-00000000363468bb: vlevo 35mm, 172.26.70.19
-        ('rpi-00000000363468bb', '6'),
-        # rpi-00000000e7ee04d2: vpravo 35mm, 172.26.70.20
-        ('rpi-00000000e7ee04d2', '7'),
-        # rpi-00000000d56be96f: uprostred tele, 172.26.70.21
-        ('rpi-00000000d56be96f', '5'),
-        # rpi-00000000ef688e57: 24-105 vzadu, 172.26.70.34
-        ('rpi-00000000ef688e57', '3'),
+        # # rpi-00000000363468bb: vlevo 35mm, 172.26.70.19
+        # ('rpi-00000000363468bb', '6'),
+        # # rpi-00000000e7ee04d2: vpravo 35mm, 172.26.70.20
+        # ('rpi-00000000e7ee04d2', '7'),
+        # # rpi-00000000d56be96f: uprostred tele, 172.26.70.21
+        # # rpi-00000000ef688e57: 24-105 vzadu, 172.26.70.34
+        # ('rpi-00000000ef688e57', '3'),
+        ('rpi-00000000d56be96f', '2', False),
+        ('rpi-00000000363468bb', '6', False), # samyang nahore
+        ('rpi-00000000ef688e57', '1', False),
+        ('rpi-00000000e7ee04d2', '5', False), # 5d3 nahore
+
+        ('rpi-00000000b3a1193a', '4', False), # 5div vlevo dole
 
         # 5Diii 35
         # ('rpi-00000000d56be96f', None),
