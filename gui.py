@@ -719,7 +719,8 @@ if __name__ == "__main__":
 
     def switch_camera_xtouch(which):
         if which == 'btn1':
-            tmp_cam = cams['rpi-00000000d56be96f']
+            # tmp_cam = cams['rpi-00000000d56be96f']
+            tmp_cam = cams['rpi-00000000b3a1193a']
             target_led = 'previous'
         elif which == 'btn2':
             tmp_cam = cams['rpi-00000000363468bb']
