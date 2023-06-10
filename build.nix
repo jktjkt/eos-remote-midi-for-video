@@ -12,7 +12,7 @@ let
     version = "2021-06-30";
     src = /home/jkt/work/prog/gphoto2;
   });
-  my_python = pkgs.python39;
+  my_python = pkgs.python310;
   # my_python_gphoto2 = my_python.pkgs.buildPythonPackage rec {
   # };
   my_python_gphoto2 = my_python.pkgs.gphoto2.override {
@@ -29,6 +29,11 @@ in pkgs.mkShell rec {
     my_python.pkgs.python-rtmidi
     my_python_gphoto2
     gphoto2
+    pkgs.qt5.qtbase
+    # pkgs.qt5.qtquick1
+    # pkgs.qt5.qtquickcontrols
+    # pkgs.qt5.qtquickcontrols2
+    pkgs.qt5.qtwayland
 
     # my_python.pkgs.python-language-server
     # my_python.pkgs.rope
