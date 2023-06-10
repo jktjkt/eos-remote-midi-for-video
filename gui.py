@@ -699,12 +699,28 @@ if __name__ == "__main__":
         # # rpi-00000000d56be96f: uprostred tele, 172.26.70.21
         # # rpi-00000000ef688e57: 24-105 vzadu, 172.26.70.34
         # ('rpi-00000000ef688e57', '3'),
-        ('rpi-00000000d56be96f', '2', False),
-        ('rpi-00000000363468bb', '6', False), # samyang nahore
-        ('rpi-00000000ef688e57', '1', False),
-        ('rpi-00000000e7ee04d2', '5', False), # 5d3 nahore
+        # ('rpi-00000000d56be96f', '2', False),
+        # ('rpi-00000000363468bb', '6', False), # samyang nahore
+        # ('rpi-00000000ef688e57', '1', False),
+        # ('rpi-00000000e7ee04d2', '5', False), # 5d3 nahore
 
-        ('rpi-00000000b3a1193a', '4', False), # 5div vlevo dole
+        # ('rpi-00000000b3a1193a', '4', False), # 5div vlevo dole
+
+        # ('rpi-00000000538f432e', '8', False), # manual testing
+
+        # ('rpi-00000000ef688e57', '4', False), # 70-200 vzadu, .70.20 FIXME: unknown model
+        # ('rpi-00000000d56be96f', '5', False), # zadni, .70.21 FIXME cislo
+        # ('rpi-00000000e7ee04d2', '6', False), # dirigent, OK, .70.17
+        # ('rpi-00000000b3a1193a', '7', False), # vepredu zprava, .70.22 FIXME: unknown model
+        # ('rpi-00000000363468bb', '8', False), # vepredu zleva, .70.19 FIXME: unknown model
+
+        ('rpi-00000000ef688e57', '1', False), # 70-200 vzadu
+        ('rpi-00000000xxxxxxxx', '2', False), # RP + 24-105 "mobilni"
+        ('rpi-00000000b3a1193a', '3', False), # kazatelna
+        ('rpi-00000000363468bb', '4', False), # sirokey za oltarem
+        ('rpi-00000000yyyyyyyy', '5', False), # RP + 24-105 variabilni, vzadu, unmanned
+        ('rpi-00000000d56be96f', '6', False), # dirigent
+        ('rpi-00000000e7ee04d2', '7', False), # 24-105 RP Damian
 
         # 5Diii 35
         # ('rpi-00000000d56be96f', None),
