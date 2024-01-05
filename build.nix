@@ -2,20 +2,24 @@
 
 let
   libgphoto2 = pkgs.libgphoto2.overrideAttrs(attrs: {
-    version = "2021-08-08";
+    version = "2023-12-23";
     src = /home/jkt/work/prog/libgphoto2;
   });
   tmp_gphoto2 = pkgs.gphoto2.override {
     libgphoto2 = libgphoto2;
   };
   gphoto2 = tmp_gphoto2.overrideAttrs(attrs: {
-    version = "2021-06-30";
+    version = "2023-12-06";
     src = /home/jkt/work/prog/gphoto2;
   });
   my_python = pkgs.python310;
   # my_python_gphoto2 = my_python.pkgs.buildPythonPackage rec {
   # };
-  my_python_gphoto2 = my_python.pkgs.gphoto2.override {
+  my_python_gphoto2 = (my_python.pkgs.gphoto2.overrideAttrs(
+    attrs: {
+      version = "2023-11-07";
+      src = /home/jkt/work/prog/python-gphoto2;
+    })).override {
     libgphoto2 = libgphoto2;
   };
 # in pkgs.mkShell.override {
@@ -27,6 +31,7 @@ in pkgs.mkShell rec {
     my_python
     my_python.pkgs.mido
     my_python.pkgs.python-rtmidi
+    my_python.pkgs.packaging
     my_python_gphoto2
     gphoto2
     pkgs.qt5.qtbase
