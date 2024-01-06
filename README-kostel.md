@@ -17,12 +17,21 @@ Aux for camera control: HDMI OUT 1
 mosquitto -v -c ~/work/led-pekac/fw/board/pi/mosquitto.conf
 ```
 
-## MIDI
+## NOT HERE: MIDI
 
 ```
 cd ~/work/prog/eos-remote-midi-for-video
 nix-shell build.nix
 python gui.py
+```
+
+## RPi4 MIDI + indication:
+
+- Extreme HDMI OUT 1 -> Mini IN 1
+- RPi HDMI0 (next to the USB-C PD) -> Mini IN 2
+
+```
+ssh pi@malina-zavrena bash -c "'cd app ; . .ve/bin/activate; python3 rpi.py'"
 ```
 
 ## Atem
