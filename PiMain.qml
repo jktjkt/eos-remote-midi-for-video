@@ -55,7 +55,6 @@ Window {
                 width: 460
                 height: 250
                 color: camera.tally == "program" ? "#600" : camera.tally == "preview" ? "#040" : "#222"
-                visible: camera.status == 'online'
 
                 PiSmallField {
                     x: 410
@@ -63,66 +62,88 @@ Window {
                     field_name: 'switcher_input'
                 }
 
-                PiSmallField {
-                    id: small_camera
-                    x: 20
-                    y: 190
-                    font.pixelSize: 20
-                    text: camera.cameramodel
-                }
-                PiSmallField {
-                    x: small_camera.x
-                    y: 220
-                    font.pixelSize: 20
-                    text: camera.lensname
+                Rectangle {
+                    anchors.fill: parent
+                    visible: camera.status == 'online'
+                    color: "transparent"
+
+                    PiSmallField {
+                        id: small_camera
+                        x: 20
+                        y: 190
+                        font.pixelSize: 20
+                        text: camera.cameramodel
+                    }
+                    PiSmallField {
+                        x: small_camera.x
+                        y: 220
+                        font.pixelSize: 20
+                        text: camera.lensname
+                    }
+
+                    PiSmallField {
+                        id: small_af
+                        x: 20
+                        y: 20
+                        field_name: 'movieservoaf'
+                        is_recently_changed: camera.last_changed == 'movieservoaf' || camera.last_changed == 'manualfocusdrive'
+                        text: camera.movieservoaf == 'On' ? 'AF' : 'MF'
+                    }
+
+                    PiSmallField {
+                        id: small_evcomp
+                        x: 150
+                        y: small_af.y
+                        field_name: 'exposurecompensation'
+                        text_suffix: ' EV'
+                    }
+
+                    PiSmallField {
+                        id: small_aperture
+                        x: small_af.x
+                        y: 80
+                        field_name: 'aperture'
+                        text_prefix: 'F/'
+                    }
+             
+                    PiSmallField {
+                        id: small_shutterspeed
+                        x: small_evcomp.x
+                        y: small_aperture.y
+                        field_name: 'shutterspeed'
+                        text_suffix: 's'
+                    }
+             
+                    PiSmallField {
+                        id: small_iso
+                        x: 300
+                        y: small_aperture.y
+                        field_name: 'iso'
+                        text_prefix: 'ISO '
+                    }
+
+                    PiSmallField {
+                        x: small_shutterspeed.x
+                        y: 140
+                        is_recently_changed: camera.last_changed.startsWith('whitebalance') || camera.last_changed == 'colortemperature'
+                        text: wb_text(camera)
+                    }
                 }
 
-                PiSmallField {
-                    id: small_af
-                    x: 20
-                    y: 20
-                    field_name: 'movieservoaf'
-                    is_recently_changed: camera.last_changed == 'movieservoaf' || camera.last_changed == 'manualfocusdrive'
-                    text: camera.movieservoaf == 'On' ? 'AF' : 'MF'
-                }
-
-                PiSmallField {
-                    id: small_evcomp
-                    x: 150
-                    y: small_af.y
-                    field_name: 'exposurecompensation'
-                    text_suffix: ' EV'
-                }
-
-                PiSmallField {
-                    id: small_aperture
-                    x: small_af.x
-                    y: 80
-                    field_name: 'aperture'
-                    text_prefix: 'F/'
-                }
-         
-                PiSmallField {
-                    id: small_shutterspeed
-                    x: small_evcomp.x
-                    y: small_aperture.y
-                    field_name: 'shutterspeed'
-                    text_suffix: 's'
-                }
-         
-                PiSmallField {
-                    id: small_iso
-                    x: 300
-                    y: small_aperture.y
-                    field_name: 'iso'
-                    text_prefix: 'ISO '
-                }
-
-                PiSmallField {
-                    x: small_shutterspeed.x
-                    y: 140
-                    is_recently_changed: camera.last_changed.startsWith('whitebalance') || camera.last_changed == 'colortemperature'
-                    text: wb_text(camera)
+                Rectangle {
+                    anchors.fill: parent
+                    visible: camera.status != 'online'
+                    color: "transparent"
+                    Text {
+                        anchors.centerIn: parent
+                        width: parent.width - 20
+                        horizontalAlignment: Text.AlignHCenter
+                        verticalAlignment: Text.AlignVCenter
+                        wrapMode: Text.Wrap
+                        font.pixelSize: 30
+                        text: camera.status
+                        color: "yellow"
+                    }
                 }
            }
         }

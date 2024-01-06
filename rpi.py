@@ -84,7 +84,7 @@ class CameraManager(QObject):
         self._last_changed = None
         self._mqtt_send_cam = None
         self._mqtt_send_tally = None
-        self._status = None
+        self._status = 'offline'
         self._tally = ''
         self._do_tally = do_tally
 
